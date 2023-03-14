@@ -1,0 +1,29 @@
+{
+    "type": "rich_message",
+    "template_id": "quick_replies",
+    "elements": [{
+        "title": "Hello, how can I help you?",
+        "buttons": [{
+                "type": "message",
+                "text": "I'm just browsing",
+                "postback_id": "send_message",
+                "user_ids": [],
+                "value": "just browsing"
+            },
+            {
+                "type": "message",
+                "text": "I enjoy chatting with the bots",
+                "postback_id": "send_message",
+                "user_ids": [],
+                "value": "chat with bot"
+            },
+            {
+                "type": "message",
+                "text": "I'd rather talk with the agent",
+                "postback_id": "send_message",
+                "user_ids": [],
+                "value": "chat with agent"
+            }
+        ]
+    }]
+}
