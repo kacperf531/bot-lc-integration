@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -60,10 +61,10 @@ func (bs *BotServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (bs *BotServer) sendRequest(url string, payload []byte) (*http.Response, error) {
-	auth := os.Getenv("TOKEN")
 	r, _ := http.NewRequest("POST", sendEventURL, bytes.NewBuffer(payload))
-	r.Header.Set("Authorization", auth)
+	r.Header.Set("Authorization", os.Getenv("TOKEN"))
 	r.Header.Set("Content-type", "Application/json")
+	r.Header.Set("X-Author-Id", os.Getenv("BOT_ID"))
 	return bs.HttpClient.Do(r)
 }
 
@@ -78,9 +79,13 @@ func (bs *BotServer) SendEventReply(prompt, chatId string) {
 			Text: text,
 			Type: "message"}}
 	requestBody, _ := json.Marshal(replyEvent)
-	_, err := bs.sendRequest(sendEventURL, requestBody)
+	response, err := bs.sendRequest(sendEventURL, requestBody)
 	if err != nil {
 		log.Printf(`There was an error sending the "send_event" request, %v`, err)
+	}
+	if response.StatusCode != 200 {
+		responseBody, _ := ioutil.ReadAll(response.Body)
+		log.Fatalf("Livechat API rejected send_event request with message: %s", string(responseBody))
 	}
 
 }
