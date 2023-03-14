@@ -6,13 +6,14 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
 )
 
 const sendEventURL = "https://api.labs.livechatinc.com/v3.5/agent/action/send_event"
 
 type BotServer struct {
-	HttpClient http.Client
+	HttpClient          http.Client
+	RequestHeader       http.Header
+	RichMessageTemplate json.RawMessage
 }
 
 type MessageEvent struct {
@@ -90,9 +91,7 @@ func (bs *BotServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (bs *BotServer) sendRequest(url string, payload []byte) (*http.Response, error) {
 	r, _ := http.NewRequest("POST", sendEventURL, bytes.NewBuffer(payload))
-	r.Header.Set("Authorization", os.Getenv("TOKEN"))
-	r.Header.Set("Content-type", "Application/json")
-	r.Header.Set("X-Author-Id", os.Getenv("BOT_ID"))
+	r.Header = bs.RequestHeader
 	response, err := bs.HttpClient.Do(r)
 	if response.StatusCode != 200 {
 		responseBody, _ := ioutil.ReadAll(response.Body)
@@ -122,9 +121,8 @@ func (bs *BotServer) SendEventReply(event MessageEvent, chatId string) {
 }
 
 func (bs *BotServer) SendRichMessage(chatId string) {
-	richMessage, _ := ioutil.ReadFile("./rich_message.json")
 	replyEvent := SendEventRequest{ChatID: chatId,
-		Event: richMessage}
+		Event: bs.RichMessageTemplate}
 	requestBody, _ := json.Marshal(replyEvent)
 	bs.sendRequest(sendEventURL, requestBody)
 }
