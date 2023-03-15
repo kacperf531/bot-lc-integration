@@ -12,12 +12,19 @@ import (
 
 const TokenURL = "https://accounts.labs.livechat.com/v2/token"
 const SendEventURL = "https://api.labs.livechatinc.com/v3.5/agent/action/send_event"
+const SetRoutingStatusURL = "https://api.labs.livechatinc.com/v3.5/agent/action/set_routing_status"
+const TransferAgentURL = "https://api.labs.livechatinc.com/v3.5/agent/action/transfer_chat"
 const CreateBotURL = "https://api.labs.livechatinc.com/v3.5/configuration/action/create_bot"
 const BotName = "Aquarius"
 
 type TokenDetails struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
+}
+
+type SendEventRequest struct {
+	ChatID string          `json:"chat_id"`
+	Event  json.RawMessage `json:"event"`
 }
 
 func sendRequest(c *http.Client, url string, payload []byte, header http.Header) (*http.Response, error) {
@@ -53,8 +60,8 @@ func GetAuthToken(c *http.Client, code, clientID, clientSecret, redirectURI stri
 	return tokenDetails, nil
 }
 
-// This should probably accept some kind of struct not slice of bytes?
-func SendEvent(c *http.Client, payload []byte, header http.Header) error {
+func SendEvent(c *http.Client, chatID string, event json.RawMessage, header http.Header) error {
+	payload, _ := json.Marshal(SendEventRequest{ChatID: chatID, Event: event})
 	_, err := sendRequest(c, SendEventURL, payload, header)
 	if err != nil {
 		return fmt.Errorf("There was a problem with sending event, details: %v", err)
@@ -74,4 +81,22 @@ func CreateBot(c *http.Client, header http.Header) (string, error) {
 	parsedResponse := &createBotResponse{}
 	json.NewDecoder(response.Body).Decode(&parsedResponse)
 	return parsedResponse.ID, nil
+}
+
+func SetRoutingStatus(c *http.Client, status, agentID string, header http.Header) error {
+	payload, _ := json.Marshal(map[string]string{"status": status, "agent_id": agentID})
+	_, err := sendRequest(c, SetRoutingStatusURL, payload, header)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func TransferChat(c *http.Client, chatID string, header http.Header) error {
+	payload, _ := json.Marshal(map[string]string{"id": chatID})
+	_, err := sendRequest(c, TransferAgentURL, payload, header)
+	if err != nil {
+		return err
+	}
+	return nil
 }

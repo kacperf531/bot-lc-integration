@@ -1,7 +1,6 @@
 package main
 
 import (
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -15,7 +14,7 @@ func main() {
 		log.Fatal("Error loading .env file")
 	}
 	httpClient := &http.Client{}
-	richMessageTemplate, _ := ioutil.ReadFile("./rich_message.json")
+	richMessageTemplate, _ := os.ReadFile("./rich_message.json")
 	server := &BotServer{HttpClient: *httpClient,
 		RichMessageTemplate: richMessageTemplate,
 		RequestHeader: http.Header{

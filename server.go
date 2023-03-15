@@ -17,29 +17,20 @@ type BotServer struct {
 	OAuthClientSecret      string
 	OAuthClientRedirectURI string
 }
-
 type MessageEvent struct {
 	Text string `json:"text"`
 	Type string `json:"type"`
 }
-
-type SendEventRequest struct {
-	ChatID string          `json:"chat_id"`
-	Event  json.RawMessage `json:"event"`
-}
-
 type IncomingEvent struct {
 	ChatID   string          `json:"chat_id"`
 	ThreadID string          `json:"thread_id"`
 	Event    json.RawMessage `json:"event"`
 }
 
-type Chat struct {
-	ID string `json:"id"`
-}
-
 type IncomingChat struct {
-	Chat Chat `json:"chat"`
+	Chat struct {
+		ID string `json:"id"`
+	} `json:"chat"`
 }
 
 type Webhook struct {
@@ -81,7 +72,7 @@ func (bs *BotServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "Thanks for using my app - kacperf531")
 		tokenDetails, err := livechat.GetAuthToken(&bs.HttpClient, code, bs.OAuthClientID, bs.OAuthClientSecret, bs.OAuthClientRedirectURI)
 		if err != nil {
-			log.Fatalf("There was an error when exchanging the authorization code for token %v", err)
+			log.Fatalf("There was an error during installation when exchanging the authorization code for token %v", err)
 		}
 		bs.RequestHeader.Set("Authorization", fmt.Sprintf("Bearer %s", tokenDetails.AccessToken))
 		// TODO: Store refresh token
@@ -89,6 +80,10 @@ func (bs *BotServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		bs.RequestHeader.Set("X-Author-ID", botID)
 		if err != nil {
 			log.Fatalf("Could not create the bot due to an error: %v", err)
+		}
+		err = livechat.SetRoutingStatus(&bs.HttpClient, "accepting_chats", botID, bs.RequestHeader)
+		if err != nil {
+			log.Fatalf("Could not update bot's status due to an error: %v", err)
 		}
 	case r.Method == "POST":
 		// TODO: Check if bs.token is set. If not, get it by exchanging refresh token
@@ -110,34 +105,38 @@ func (bs *BotServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func (bs *BotServer) SendEventReply(event MessageEvent, chatId string) {
+func (bs *BotServer) SendEventReply(event MessageEvent, chatID string) {
 	var text string
 	switch {
 	case event.Text == "I'm just browsing":
 		text = "Sure, let me know if you have any questions."
 	case event.Text == "I'd rather talk with the agent":
-		text = "Granted, you will be redirected to talk with the agent now."
-		// TODO: Perform transfer to agent
+		text = "Granted, you will be redirected to talk with the agent."
+		defer bs.TransferChatToAgent(chatID)
 	default:
 		text = "Ok what would you like to talk about?"
 	}
-	message, _ := json.Marshal(MessageEvent{
-		Text: text,
-		Type: "message"})
-	replyEvent := SendEventRequest{ChatID: chatId,
-		Event: message}
-	requestBody, _ := json.Marshal(replyEvent)
-	err := livechat.SendEvent(&bs.HttpClient, requestBody, bs.RequestHeader)
+	bs.SendMessage(chatID, text)
+}
+
+func (bs *BotServer) TransferChatToAgent(chatID string) {
+	err := livechat.TransferChat(&bs.HttpClient, chatID, bs.RequestHeader)
+	if err != nil {
+		log.Printf("Could not transfer chat due to error %s", err)
+		bs.SendMessage(chatID, "Sorry, currently no agents available")
+	}
+}
+
+func (bs *BotServer) SendMessage(chatID, text string) {
+	event, _ := json.Marshal(map[string]string{"type": "message", "text": text})
+	err := livechat.SendEvent(&bs.HttpClient, chatID, event, bs.RequestHeader)
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-func (bs *BotServer) SendRichMessage(chatId string) {
-	richMessageEvent := SendEventRequest{ChatID: chatId,
-		Event: bs.RichMessageTemplate}
-	requestBody, _ := json.Marshal(richMessageEvent)
-	err := livechat.SendEvent(&bs.HttpClient, requestBody, bs.RequestHeader)
+func (bs *BotServer) SendRichMessage(chatID string) {
+	err := livechat.SendEvent(&bs.HttpClient, chatID, bs.RichMessageTemplate, bs.RequestHeader)
 	if err != nil {
 		log.Fatal(err)
 	}
