@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/joho/godotenv"
+	"github.com/kacperf531/bot-lc-integration/livechat"
 )
 
 func main() {
@@ -14,11 +15,12 @@ func main() {
 		log.Fatal("Error loading .env file")
 	}
 	httpClient := &http.Client{}
+	livechatAPIClient := &livechat.LivechatAPIClient{HTTPClient: *httpClient, Header: http.Header{
+		"Content-type": {"Application/json"}}}
 	richMessageTemplate, _ := os.ReadFile("./rich_message.json")
-	server := &BotServer{HttpClient: *httpClient,
-		RichMessageTemplate: richMessageTemplate,
-		RequestHeader: http.Header{
-			"Content-type": {"Application/json"}},
+	server := &BotServer{
+		LivechatAPI:            *livechatAPIClient,
+		RichMessageTemplate:    richMessageTemplate,
 		OAuthClientID:          os.Getenv("CLIENT_ID"),
 		OAuthClientSecret:      os.Getenv("CLIENT_SECRET"),
 		OAuthClientRedirectURI: os.Getenv("CLIENT_REDIRECT_URI")}

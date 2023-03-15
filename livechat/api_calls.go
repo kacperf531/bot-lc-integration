@@ -11,11 +11,11 @@ import (
 )
 
 const TokenURL = "https://accounts.labs.livechat.com/v2/token"
-const SendEventURL = "https://api.labs.livechatinc.com/v3.5/agent/action/send_event"
-const SetRoutingStatusURL = "https://api.labs.livechatinc.com/v3.5/agent/action/set_routing_status"
-const TransferAgentURL = "https://api.labs.livechatinc.com/v3.5/agent/action/transfer_chat"
-const CreateBotURL = "https://api.labs.livechatinc.com/v3.5/configuration/action/create_bot"
-const BotName = "Aquarius"
+const APIURL = "https://api.labs.livechatinc.com/v3.5"
+const SendEventURL = APIURL + "/agent/action/send_event"
+const SetRoutingStatusURL = APIURL + "/agent/action/set_routing_status"
+const TransferAgentURL = APIURL + "/agent/action/transfer_chat"
+const CreateBotURL = APIURL + "/configuration/action/create_bot"
 
 type TokenDetails struct {
 	AccessToken  string `json:"access_token"`
@@ -27,11 +27,16 @@ type SendEventRequest struct {
 	Event  json.RawMessage `json:"event"`
 }
 
-func sendRequest(c *http.Client, url string, payload []byte, header http.Header) (*http.Response, error) {
+type LivechatAPIClient struct {
+	HTTPClient http.Client
+	Header     http.Header
+}
+
+func (c *LivechatAPIClient) sendRequest(url string, payload []byte) (*http.Response, error) {
 	// all requests to API are POST so the method is hardcoded here
 	r, _ := http.NewRequest("POST", url, bytes.NewBuffer(payload))
-	r.Header = header
-	response, err := c.Do(r)
+	r.Header = c.Header
+	response, err := c.HTTPClient.Do(r)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +47,7 @@ func sendRequest(c *http.Client, url string, payload []byte, header http.Header)
 	return response, nil
 }
 
-func GetAuthToken(c *http.Client, code, clientID, clientSecret, redirectURI string) (*TokenDetails, error) {
+func (c *LivechatAPIClient) GetAuthToken(code, clientID, clientSecret, redirectURI string) (*TokenDetails, error) {
 	URL, _ := url.Parse(TokenURL)
 	q := URL.Query()
 	q.Set("grant_type", "authorization_code")
@@ -51,7 +56,7 @@ func GetAuthToken(c *http.Client, code, clientID, clientSecret, redirectURI stri
 	q.Set("client_secret", clientSecret)
 	q.Set("redirect_uri", redirectURI)
 	URL.RawQuery = q.Encode()
-	response, err := sendRequest(c, URL.String(), []byte{}, http.Header{})
+	response, err := c.sendRequest(URL.String(), []byte{})
 	if err != nil {
 		return nil, fmt.Errorf("Error occured while exchanging code for token: %v", err)
 	}
@@ -60,18 +65,18 @@ func GetAuthToken(c *http.Client, code, clientID, clientSecret, redirectURI stri
 	return tokenDetails, nil
 }
 
-func SendEvent(c *http.Client, chatID string, event json.RawMessage, header http.Header) error {
+func (c *LivechatAPIClient) SendEvent(chatID string, event json.RawMessage) error {
 	payload, _ := json.Marshal(SendEventRequest{ChatID: chatID, Event: event})
-	_, err := sendRequest(c, SendEventURL, payload, header)
+	_, err := c.sendRequest(SendEventURL, payload)
 	if err != nil {
 		return fmt.Errorf("There was a problem with sending event, details: %v", err)
 	}
 	return nil
 }
 
-func CreateBot(c *http.Client, header http.Header) (string, error) {
-	payload, _ := json.Marshal(map[string]string{"name": BotName})
-	response, err := sendRequest(c, CreateBotURL, payload, header)
+func (c *LivechatAPIClient) CreateBot(name string) (string, error) {
+	payload, _ := json.Marshal(map[string]string{"name": name})
+	response, err := c.sendRequest(CreateBotURL, payload)
 	if err != nil {
 		return "", err
 	}
@@ -83,18 +88,18 @@ func CreateBot(c *http.Client, header http.Header) (string, error) {
 	return parsedResponse.ID, nil
 }
 
-func SetRoutingStatus(c *http.Client, status, agentID string, header http.Header) error {
+func (c *LivechatAPIClient) SetRoutingStatus(status, agentID string) error {
 	payload, _ := json.Marshal(map[string]string{"status": status, "agent_id": agentID})
-	_, err := sendRequest(c, SetRoutingStatusURL, payload, header)
+	_, err := c.sendRequest(SetRoutingStatusURL, payload)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func TransferChat(c *http.Client, chatID string, header http.Header) error {
+func (c *LivechatAPIClient) TransferChat(chatID string) error {
 	payload, _ := json.Marshal(map[string]string{"id": chatID})
-	_, err := sendRequest(c, TransferAgentURL, payload, header)
+	_, err := c.sendRequest(TransferAgentURL, payload)
 	if err != nil {
 		return err
 	}

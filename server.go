@@ -10,8 +10,7 @@ import (
 )
 
 type BotServer struct {
-	HttpClient             http.Client
-	RequestHeader          http.Header
+	LivechatAPI            livechat.LivechatAPIClient
 	RichMessageTemplate    json.RawMessage
 	OAuthClientID          string
 	OAuthClientSecret      string
@@ -70,18 +69,18 @@ func (bs *BotServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/install":
 		code := r.URL.Query().Get("code")
 		fmt.Fprint(w, "Thanks for using my app - kacperf531")
-		tokenDetails, err := livechat.GetAuthToken(&bs.HttpClient, code, bs.OAuthClientID, bs.OAuthClientSecret, bs.OAuthClientRedirectURI)
+		tokenDetails, err := bs.LivechatAPI.GetAuthToken(code, bs.OAuthClientID, bs.OAuthClientSecret, bs.OAuthClientRedirectURI)
 		if err != nil {
 			log.Fatalf("There was an error during installation when exchanging the authorization code for token %v", err)
 		}
-		bs.RequestHeader.Set("Authorization", fmt.Sprintf("Bearer %s", tokenDetails.AccessToken))
+		bs.LivechatAPI.Header.Set("Authorization", fmt.Sprintf("Bearer %s", tokenDetails.AccessToken))
 		// TODO: Store refresh token
-		botID, err := livechat.CreateBot(&bs.HttpClient, bs.RequestHeader)
-		bs.RequestHeader.Set("X-Author-ID", botID)
+		botID, err := bs.LivechatAPI.CreateBot("Aquarius")
+		bs.LivechatAPI.Header.Set("X-Author-ID", botID)
 		if err != nil {
 			log.Fatalf("Could not create the bot due to an error: %v", err)
 		}
-		err = livechat.SetRoutingStatus(&bs.HttpClient, "accepting_chats", botID, bs.RequestHeader)
+		err = bs.LivechatAPI.SetRoutingStatus("accepting_chats", botID)
 		if err != nil {
 			log.Fatalf("Could not update bot's status due to an error: %v", err)
 		}
@@ -120,7 +119,7 @@ func (bs *BotServer) SendEventReply(event MessageEvent, chatID string) {
 }
 
 func (bs *BotServer) TransferChatToAgent(chatID string) {
-	err := livechat.TransferChat(&bs.HttpClient, chatID, bs.RequestHeader)
+	err := bs.LivechatAPI.TransferChat(chatID)
 	if err != nil {
 		log.Printf("Could not transfer chat due to error %s", err)
 		bs.SendMessage(chatID, "Sorry, currently no agents available")
@@ -129,14 +128,14 @@ func (bs *BotServer) TransferChatToAgent(chatID string) {
 
 func (bs *BotServer) SendMessage(chatID, text string) {
 	event, _ := json.Marshal(map[string]string{"type": "message", "text": text})
-	err := livechat.SendEvent(&bs.HttpClient, chatID, event, bs.RequestHeader)
+	err := bs.LivechatAPI.SendEvent(chatID, event)
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
 func (bs *BotServer) SendRichMessage(chatID string) {
-	err := livechat.SendEvent(&bs.HttpClient, chatID, bs.RichMessageTemplate, bs.RequestHeader)
+	err := bs.LivechatAPI.SendEvent(chatID, bs.RichMessageTemplate)
 	if err != nil {
 		log.Fatal(err)
 	}
