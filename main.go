@@ -19,9 +19,7 @@ func main() {
 	server := &BotServer{HttpClient: *httpClient,
 		RichMessageTemplate: richMessageTemplate,
 		RequestHeader: http.Header{
-			"X-Author-Id":   {os.Getenv("BOT_ID")},
-			"Authorization": {os.Getenv("TOKEN")},
-			"Content-type":  {"Application/json"}},
+			"Content-type": {"Application/json"}},
 		OAuthClientID:          os.Getenv("CLIENT_ID"),
 		OAuthClientSecret:      os.Getenv("CLIENT_SECRET"),
 		OAuthClientRedirectURI: os.Getenv("CLIENT_REDIRECT_URI")}

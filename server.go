@@ -1,17 +1,13 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
-)
 
-const sendEventURL = "https://api.labs.livechatinc.com/v3.5/agent/action/send_event"
-const TokenURL = "https://accounts.labs.livechat.com/v2/token"
+	"github.com/kacperf531/bot-lc-integration/livechat"
+)
 
 type BotServer struct {
 	HttpClient             http.Client
@@ -51,11 +47,6 @@ type Webhook struct {
 	Payload json.RawMessage `json:"payload"`
 }
 
-type TokenDetails struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-}
-
 func unmarshalIncomingEvent(payload json.RawMessage) (IncomingEvent, error) {
 	var ie IncomingEvent
 	err := json.Unmarshal(payload, &ie)
@@ -88,14 +79,17 @@ func (bs *BotServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/install":
 		code := r.URL.Query().Get("code")
 		fmt.Fprint(w, "Thanks for using my app - kacperf531")
-		tokenDetails, err := bs.GetAuthToken(&bs.HttpClient, code)
+		tokenDetails, err := livechat.GetAuthToken(&bs.HttpClient, code, bs.OAuthClientID, bs.OAuthClientSecret, bs.OAuthClientRedirectURI)
 		if err != nil {
 			log.Fatalf("There was an error when exchanging the authorization code for token %v", err)
 		}
-		// TODO: check if `Bearer ` prefix is not needed here
-		os.Setenv("TOKEN", tokenDetails.AccessToken)
+		bs.RequestHeader.Set("Authorization", fmt.Sprintf("Bearer %s", tokenDetails.AccessToken))
 		// TODO: Store refresh token
-		// TODO: Create new bot & set it to accept chats
+		botID, err := livechat.CreateBot(&bs.HttpClient, bs.RequestHeader)
+		bs.RequestHeader.Set("X-Author-ID", botID)
+		if err != nil {
+			log.Fatalf("Could not create the bot due to an error: %v", err)
+		}
 	case r.Method == "POST":
 		// TODO: Check if bs.token is set. If not, get it by exchanging refresh token
 		var w Webhook
@@ -116,42 +110,6 @@ func (bs *BotServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func (bs *BotServer) GetAuthToken(c *http.Client, code string) (*TokenDetails, error) {
-	r, err := http.NewRequest("POST", TokenURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	q := r.URL.Query()
-	q.Set("grant_type", "authorization_code")
-	q.Set("code", code)
-	q.Set("client_id", bs.OAuthClientID)
-	q.Set("client_secret", bs.OAuthClientSecret)
-	q.Set("redirect_uri", bs.OAuthClientRedirectURI)
-	r.URL.RawQuery = q.Encode()
-	var tokenDetails TokenDetails
-	response, err := bs.HttpClient.Do(r)
-	if err != nil {
-		return nil, err
-	}
-	if response.StatusCode != 200 {
-		rejectionDetails, _ := ioutil.ReadAll(response.Body)
-		return nil, fmt.Errorf("Livechat SSO rejected token request: %s", rejectionDetails)
-	}
-	json.NewDecoder(response.Body).Decode(&tokenDetails)
-	return &tokenDetails, nil
-}
-
-func (bs *BotServer) sendRequest(url string, payload []byte) (*http.Response, error) {
-	r, _ := http.NewRequest("POST", sendEventURL, bytes.NewBuffer(payload))
-	r.Header = bs.RequestHeader
-	response, err := bs.HttpClient.Do(r)
-	if response.StatusCode != 200 {
-		responseBody, _ := ioutil.ReadAll(response.Body)
-		log.Fatalf("Livechat API rejected %s request with message: %s", url, string(responseBody))
-	}
-	return response, err
-}
-
 func (bs *BotServer) SendEventReply(event MessageEvent, chatId string) {
 	var text string
 	switch {
@@ -169,12 +127,18 @@ func (bs *BotServer) SendEventReply(event MessageEvent, chatId string) {
 	replyEvent := SendEventRequest{ChatID: chatId,
 		Event: message}
 	requestBody, _ := json.Marshal(replyEvent)
-	bs.sendRequest(sendEventURL, requestBody)
+	err := livechat.SendEvent(&bs.HttpClient, requestBody, bs.RequestHeader)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func (bs *BotServer) SendRichMessage(chatId string) {
-	replyEvent := SendEventRequest{ChatID: chatId,
+	richMessageEvent := SendEventRequest{ChatID: chatId,
 		Event: bs.RichMessageTemplate}
-	requestBody, _ := json.Marshal(replyEvent)
-	bs.sendRequest(sendEventURL, requestBody)
+	requestBody, _ := json.Marshal(richMessageEvent)
+	err := livechat.SendEvent(&bs.HttpClient, requestBody, bs.RequestHeader)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
