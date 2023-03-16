@@ -24,5 +24,7 @@ func main() {
 		OAuthClientID:          os.Getenv("CLIENT_ID"),
 		OAuthClientSecret:      os.Getenv("CLIENT_SECRET"),
 		OAuthClientRedirectURI: os.Getenv("CLIENT_REDIRECT_URI")}
-	log.Fatal(http.ListenAndServe(":5000", server))
+	http.HandleFunc("/install", server.InstallHandler)
+	http.HandleFunc("/reply", server.ReplyHandler)
+	log.Fatal(http.ListenAndServe(":5000", nil))
 }
