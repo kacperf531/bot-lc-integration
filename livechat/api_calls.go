@@ -37,19 +37,19 @@ func (c *LivechatAPIClient) sendRequest(url string, payloadBytes []byte) (*http.
 	// all requests to API are POST so the method is hardcoded here
 	r, err := http.NewRequest("POST", url, bytes.NewBuffer(payloadBytes))
 	if err != nil {
-		return nil, fmt.Errorf("Error building %s request: %v", url, err)
+		return nil, fmt.Errorf("error building %s request: %v", url, err)
 	}
 	r.Header = c.Header
 	response, err := c.HTTPClient.Do(r)
 	if err != nil {
-		return nil, fmt.Errorf("Error sending %s request: %v", url, err)
+		return nil, fmt.Errorf("error sending %s request: %v", url, err)
 	}
 	if response.StatusCode != 200 {
 		responseBody, err := io.ReadAll(response.Body)
 		if err != nil {
-			return nil, fmt.Errorf("There was an issue with reading response from API %v", err)
+			return nil, fmt.Errorf("there was an issue with reading response from API %v", err)
 		}
-		return nil, fmt.Errorf("Livechat API rejected %s request with message: %s", url, string(responseBody))
+		return nil, fmt.Errorf("livechat API rejected %s request with message: %s", url, string(responseBody))
 	}
 	return response, nil
 }
@@ -57,7 +57,7 @@ func (c *LivechatAPIClient) sendRequest(url string, payloadBytes []byte) (*http.
 func (c *LivechatAPIClient) sendJSONRequest(url string, payload interface{}) (*http.Response, error) {
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("Could not marshal provided payload due to an error: %v", err)
+		return nil, fmt.Errorf("could not marshal provided payload due to an error: %v", err)
 	}
 	response, err := c.sendRequest(url, payloadBytes)
 	if err != nil {
@@ -69,7 +69,7 @@ func (c *LivechatAPIClient) sendJSONRequest(url string, payload interface{}) (*h
 func (c *LivechatAPIClient) GetAuthToken(code, clientID, clientSecret, redirectURI string) (*TokenDetails, error) {
 	URL, err := url.Parse(TokenURL)
 	if err != nil {
-		return nil, fmt.Errorf("Error parsing the %s URL: %v", TokenURL, err)
+		return nil, fmt.Errorf("error parsing the %s URL: %v", TokenURL, err)
 	}
 	q := URL.Query()
 	q.Set("grant_type", "authorization_code")
@@ -80,17 +80,37 @@ func (c *LivechatAPIClient) GetAuthToken(code, clientID, clientSecret, redirectU
 	URL.RawQuery = q.Encode()
 	response, err := c.sendRequest(URL.String(), []byte{})
 	if err != nil {
-		return nil, fmt.Errorf("Error occured while exchanging code for token: %v", err)
+		return nil, fmt.Errorf("error occured while exchanging code for token: %v", err)
 	}
 	tokenDetails := &TokenDetails{}
 	json.NewDecoder(response.Body).Decode(&tokenDetails)
 	return tokenDetails, nil
 }
 
+func (c *LivechatAPIClient) GetAuthTokenFromRefresh(refresh_token, clientID, clientSecret string) (string, error) {
+	URL, err := url.Parse(TokenURL)
+	if err != nil {
+		return "", fmt.Errorf("error parsing the %s URL: %v", TokenURL, err)
+	}
+	q := URL.Query()
+	q.Set("grant_type", "refresh_token")
+	q.Set("refresh_token", refresh_token)
+	q.Set("client_id", clientID)
+	q.Set("client_secret", clientSecret)
+	URL.RawQuery = q.Encode()
+	response, err := c.sendRequest(URL.String(), []byte{})
+	if err != nil {
+		return "", fmt.Errorf("error occured while exchanging code for token: %v", err)
+	}
+	tokenDetails := &TokenDetails{}
+	json.NewDecoder(response.Body).Decode(&tokenDetails)
+	return tokenDetails.AccessToken, nil
+}
+
 func (c *LivechatAPIClient) SendEvent(chatID string, event json.RawMessage) error {
 	_, err := c.sendJSONRequest(SendEventURL, SendEventRequest{ChatID: chatID, Event: event})
 	if err != nil {
-		return fmt.Errorf("There was a problem with sending event, details: %v", err)
+		return fmt.Errorf("there was a problem with sending event, details: %v", err)
 	}
 	return nil
 }

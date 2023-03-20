@@ -5,25 +5,30 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/kacperf531/bot-lc-integration/livechat"
 )
 
 type BotServer struct {
-	LivechatAPI            livechat.LivechatAPIClient
-	RichMessageTemplate    json.RawMessage
-	OAuthClientID          string
-	OAuthClientSecret      string
-	OAuthClientRedirectURI string
+	LivechatAPI             livechat.LivechatAPIClient
+	RichMessageTemplate     json.RawMessage
+	OAuthClientID           string
+	OAuthClientSecret       string
+	OAuthClientRedirectURI  string
+	IntegrationDataRequired bool
 }
-type MessageEvent struct {
-	Text string `json:"text"`
-	Type string `json:"type"`
+type RichMessage struct {
+	Text     string `json:"text"`
+	Type     string `json:"type"`
+	Postback struct {
+		Id string `json:"id"`
+	} `json:"postback"`
 }
 type IncomingEvent struct {
-	ChatID   string       `json:"chat_id"`
-	ThreadID string       `json:"thread_id"`
-	Event    MessageEvent `json:"event"`
+	ChatID   string      `json:"chat_id"`
+	ThreadID string      `json:"thread_id"`
+	Event    RichMessage `json:"event"`
 }
 
 type IncomingChat struct {
@@ -35,6 +40,11 @@ type IncomingChat struct {
 type Webhook struct {
 	Action  string          `json:"action"`
 	Payload json.RawMessage `json:"payload"`
+}
+
+type InstallationData struct {
+	RefreshToken string `json:"refresh_token"`
+	BotID        string `json:"bot_id"`
 }
 
 func unmarshalIncomingEvent(payload json.RawMessage) (IncomingEvent, error) {
@@ -55,15 +65,6 @@ func unmarshalIncomingChat(payload json.RawMessage) (IncomingChat, error) {
 	return ic, nil
 }
 
-func unmarshalEvent(payload json.RawMessage) (MessageEvent, error) {
-	var e MessageEvent
-	err := json.Unmarshal(payload, &e)
-	if err != nil {
-		return e, err
-	}
-	return e, nil
-}
-
 func (bs *BotServer) InstallHandler(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
 	fmt.Fprint(w, "Thanks for using my app - kacperf531")
@@ -72,8 +73,16 @@ func (bs *BotServer) InstallHandler(w http.ResponseWriter, r *http.Request) {
 		log.Fatalf("There was an error during installation when exchanging the authorization code for token %v", err)
 	}
 	bs.LivechatAPI.Header.Set("Authorization", fmt.Sprintf("Bearer %s", tokenDetails.AccessToken))
-	// TODO: Store refresh token
 	botID, err := bs.LivechatAPI.CreateBot("Aquarius")
+	if err != nil {
+		log.Fatalf("Error when creating the bot %v", err)
+	}
+	installationData := InstallationData{RefreshToken: tokenDetails.RefreshToken, BotID: botID}
+	installationDataBytes, err := json.Marshal(installationData)
+	if err != nil {
+		log.Fatalf("Could not save installation details due to an error %v", err)
+	}
+	os.WriteFile("installation_data.json", installationDataBytes, 0644)
 	bs.LivechatAPI.Header.Set("X-Author-ID", botID)
 	if err != nil {
 		log.Fatalf("Could not create the bot due to an error: %v", err)
@@ -82,10 +91,14 @@ func (bs *BotServer) InstallHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Fatalf("Could not update bot's status due to an error: %v", err)
 	}
+	bs.IntegrationDataRequired = false
 }
 
 func (bs *BotServer) ReplyHandler(w http.ResponseWriter, r *http.Request) {
-	// TODO: Check if bs.token is set. If not, get it by exchanging refresh token
+	if bs.IntegrationDataRequired {
+		log.Fatal("Received request from Livechat, but can't respond due to missing installation data.")
+	}
+
 	var wh Webhook
 	json.NewDecoder(r.Body).Decode(&wh)
 	switch {
@@ -94,7 +107,7 @@ func (bs *BotServer) ReplyHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Fatalf("Received `incoming_event` webhook but failed to unmarshal it due to error %v", err)
 		}
-		bs.SendEventReply(incomingEvent.Event, incomingEvent.ChatID)
+		bs.SendRichMessageReply(incomingEvent.Event, incomingEvent.ChatID)
 	case wh.Action == "incoming_chat":
 		incomingChat, err := unmarshalIncomingChat(wh.Payload)
 		if err != nil {
@@ -104,18 +117,18 @@ func (bs *BotServer) ReplyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (bs *BotServer) SendEventReply(event MessageEvent, chatID string) {
-	var text string
-	switch {
-	case event.Text == "I'm just browsing":
-		text = "Sure, let me know if you have any questions."
-	case event.Text == "I'd rather talk with the agent":
-		text = "Granted, you will be redirected to talk with the agent."
-		defer bs.TransferChatToAgent(chatID)
+func (bs *BotServer) SendRichMessageReply(event RichMessage, chatID string) {
+	switch event.Postback.Id {
+	case "just_browsing":
+		bs.SendMessage(chatID, "Sure, let me know if you have any questions.")
+	case "transfer_to_agent":
+		bs.SendMessage(chatID, "Granted, you will be redirected to talk with the agent.")
+		bs.TransferChatToAgent(chatID)
+	case "continue_chat":
+		bs.SendMessage(chatID, "Ok what would you like to talk about?")
 	default:
-		text = "Ok what would you like to talk about?"
+		bs.SendMessage(chatID, "Well, sorry I'm not smart enough to help you (yet)")
 	}
-	bs.SendMessage(chatID, text)
 }
 
 func (bs *BotServer) TransferChatToAgent(chatID string) {
@@ -142,4 +155,20 @@ func (bs *BotServer) SendRichMessage(chatID string) {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+func (bs *BotServer) SetClientHeadersFromInstallationData(installationDataBytes []byte) error {
+	var installationData InstallationData
+	err := json.Unmarshal(installationDataBytes, &installationData)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal installation data")
+	}
+	authToken, err := bs.LivechatAPI.GetAuthTokenFromRefresh(installationData.RefreshToken, bs.OAuthClientID, bs.OAuthClientSecret)
+	if err != nil {
+		return err
+	}
+	bs.LivechatAPI.Header.Set("Authorization", fmt.Sprintf("Bearer %s", authToken))
+	bs.LivechatAPI.Header.Set("X-Author-Id", installationData.BotID)
+	bs.IntegrationDataRequired = false
+	return nil
 }

@@ -6,21 +6,21 @@
         "buttons": [{
                 "type": "message",
                 "text": "I'm just browsing",
-                "postback_id": "send_message",
+                "postback_id": "just_browsing",
                 "user_ids": [],
                 "value": "just browsing"
             },
             {
                 "type": "message",
                 "text": "I enjoy chatting with the bots",
-                "postback_id": "send_message",
+                "postback_id": "continue_chat",
                 "user_ids": [],
                 "value": "chat with bot"
             },
             {
                 "type": "message",
                 "text": "I'd rather talk with the agent",
-                "postback_id": "send_message",
+                "postback_id": "transfer_to_agent",
                 "user_ids": [],
                 "value": "chat with agent"
             }
